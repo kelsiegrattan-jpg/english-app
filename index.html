@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本地背词 App（海词逻辑升级版）</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1d2a39;
+      --muted: #5f7288;
+      --primary: #2f7ef7;
+      --success: #12a150;
+      --danger: #df3f3f;
+      --warning: #f59e0b;
+      --border: #dbe4ee;
+      --shadow: 0 8px 24px rgba(18, 41, 68, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .app {
+      width: min(920px, 100%);
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.35rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat .label {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .stat .value {
+      margin-top: 6px;
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    .word {
+      text-align: center;
+      padding: 18px 12px;
+    }
+
+    .word-text {
+      font-size: clamp(1.8rem, 5vw, 2.4rem);
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .phonetic {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .meaning {
+      margin-top: 14px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      min-height: 70px;
+      display: grid;
+      place-items: center;
+      line-height: 1.7;
+      color: #23384f;
+    }
+
+    .masked {
+      filter: blur(8px);
+      user-select: none;
+    }
+
+    .example {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+
+    .controls,
+    .actions {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .actions {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 11px 12px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: #fff;
+    }
+
+    .btn-primary { background: var(--primary); }
+    .btn-success { background: var(--success); }
+    .btn-danger  { background: var(--danger); }
+    .btn-warning { background: var(--warning); }
+
+    .tip {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 12px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 640px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .actions { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="card">
+      <h1>本地背词 App（支持海量词库）</h1>
+      <div class="subtitle">
+        核心逻辑：认识/不认识分类 + 循环复习 + 遮挡释义 + 发音。<br />
+        只要把 <code>index.html</code> 和 <code>words.js</code> 放同一文件夹，直接双击即可离线使用。
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="label">词库总数</div><div class="value" id="totalCount">0</div></div>
+        <div class="stat"><div class="label">待复习</div><div class="value" id="reviewCount">0</div></div>
+        <div class="stat"><div class="label">认识</div><div class="value" id="knownCount">0</div></div>
+        <div class="stat"><div class="label">不认识</div><div class="value" id="unknownCount">0</div></div>
+      </div>
+    </section>
+
+    <section class="card" id="wordCard">
+      <div class="word">
+        <p class="word-text" id="wordText">准备开始</p>
+        <p class="phonetic" id="phoneticText">/ ... /</p>
+        <div class="meaning" id="meaningText">点击下方“开始/下一词”</div>
+        <div class="example" id="exampleText"></div>
+      </div>
+
+      <div class="controls">
+        <button id="toggleMeaningBtn" class="btn-warning">显示/遮挡释义</button>
+        <button id="speakBtn" class="btn-primary">🔊 发音</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="actions">
+        <button id="knownBtn" class="btn-success">我认识</button>
+        <button id="unknownBtn" class="btn-danger">不认识（加入循环）</button>
+        <button id="nextBtn" class="btn-primary">开始 / 下一词</button>
+      </div>
+      <p class="tip">
+        规则说明：点击“我认识”会移出复习队列；点击“不认识”会把该词放回队列末尾，之后继续出现，直到你点“我认识”为止。
+      </p>
+      <div class="empty" id="emptyNotice" hidden>
+        🎉 你已完成本轮全部单词！<br />
+        你可以刷新页面重新来一轮，或把 words.js 扩充成你的大词库继续练习。
+      </div>
+    </section>
+  </main>
+
+  <!-- 关键：先加载词库文件，再运行主逻辑。双击本地 HTML 也可直接用。 -->
+  <script src="words.js"></script>
+  <script>
+    (function () {
+      const state = {
+        reviewQueue: [],
+        knownSet: new Set(),
+        unknownSet: new Set(),
+        current: null,
+        currentMasked: true
+      };
+
+      const el = {
+        totalCount: document.getElementById('totalCount'),
+        reviewCount: document.getElementById('reviewCount'),
+        knownCount: document.getElementById('knownCount'),
+        unknownCount: document.getElementById('unknownCount'),
+        wordText: document.getElementById('wordText'),
+        phoneticText: document.getElementById('phoneticText'),
+        meaningText: document.getElementById('meaningText'),
+        exampleText: document.getElementById('exampleText'),
+        emptyNotice: document.getElementById('emptyNotice'),
+        nextBtn: document.getElementById('nextBtn'),
+        knownBtn: document.getElementById('knownBtn'),
+        unknownBtn: document.getElementById('unknownBtn'),
+        toggleMeaningBtn: document.getElementById('toggleMeaningBtn'),
+        speakBtn: document.getElementById('speakBtn')
+      };
+
+      function validateWordList() {
+        if (!Array.isArray(window.wordList) || window.wordList.length === 0) {
+          el.wordText.textContent = 'wordList 为空';
+          el.phoneticText.textContent = '/ 请检查 words.js /';
+          el.meaningText.textContent = '没有读取到词库，请确认 index.html 与 words.js 在同一文件夹。';
+          return false;
+        }
+        return true;
+      }
+
+      function resetQueue() {
+        state.reviewQueue = window.wordList.map((item, index) => ({ ...item, _id: index }));
+      }
+
+      function updateStats() {
+        el.totalCount.textContent = String(window.wordList.length);
+        el.reviewCount.textContent = String(state.reviewQueue.length);
+        el.knownCount.textContent = String(state.knownSet.size);
+        el.unknownCount.textContent = String(state.unknownSet.size);
+      }
+
+      function setMeaningMask(masked) {
+        state.currentMasked = masked;
+        el.meaningText.classList.toggle('masked', masked);
+      }
+
+      function showWord(item) {
+        state.current = item;
+        el.wordText.textContent = item.word;
+        el.phoneticText.textContent = item.phonetic || '/暂无音标/';
+        el.meaningText.textContent = item.meaning || '暂无释义';
+        el.exampleText.textContent = item.example ? `例句：${item.example}` : '';
+        setMeaningMask(true);
+      }
+
+      function showEmptyState() {
+        state.current = null;
+        el.wordText.textContent = '本轮完成';
+        el.phoneticText.textContent = '/ Great Job! /';
+        el.meaningText.textContent = '没有待复习单词了';
+        el.exampleText.textContent = '';
+        el.meaningText.classList.remove('masked');
+        el.emptyNotice.hidden = false;
+      }
+
+      function nextWord() {
+        el.emptyNotice.hidden = true;
+        if (state.reviewQueue.length === 0) {
+          showEmptyState();
+          updateStats();
+          return;
+        }
+        showWord(state.reviewQueue[0]);
+        updateStats();
+      }
+
+      function markKnown() {
+        if (!state.current) return;
+        const currentId = state.current._id;
+        state.reviewQueue.shift();
+        state.knownSet.add(currentId);
+        state.unknownSet.delete(currentId);
+        nextWord();
+      }
+
+      function markUnknown() {
+        if (!state.current) return;
+        const current = state.reviewQueue.shift();
+        state.reviewQueue.push(current);
+        state.unknownSet.add(current._id);
+        state.knownSet.delete(current._id);
+        nextWord();
+      }
+
+      function speakWord() {
+        if (!state.current) return;
+        const text = state.current.word;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.95;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+      }
+
+      function bindEvents() {
+        el.nextBtn.addEventListener('click', nextWord);
+        el.knownBtn.addEventListener('click', markKnown);
+        el.unknownBtn.addEventListener('click', markUnknown);
+        el.toggleMeaningBtn.addEventListener('click', () => setMeaningMask(!state.currentMasked));
+        el.speakBtn.addEventListener('click', speakWord);
+      }
+
+      function init() {
+        if (!validateWordList()) return;
+        resetQueue();
+        bindEvents();
+        updateStats();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
