@@ -337,6 +337,7 @@
 
       function showWord(item, source = 'next') {
         state.current = item;
+        const fetchToken = ++state.currentFetchToken;
         el.wordText.textContent = item.word;
         el.phoneticText.textContent = item.phonetic || '/暂无音标/';
         el.meaningText.textContent = baseMeaningText(item);
@@ -362,14 +363,14 @@
         el.emptyNotice.hidden = false;
       }
 
-      function nextWord() {
+      async function nextWord() {
         el.emptyNotice.hidden = true;
         if (state.reviewQueue.length === 0) {
           showEmptyState();
           updateStats();
           return;
         }
-        showWord(state.reviewQueue[0]);
+        await showWord(state.reviewQueue[0]);
         updateStats();
       }
 
