@@ -90,6 +90,21 @@
       font-size: clamp(1.8rem, 5vw, 2.4rem);
       font-weight: 700;
       margin: 0;
+      transition: color 0.2s ease;
+    }
+
+    .word-text.unknown-feedback {
+      color: var(--danger);
+      animation: shake 0.45s ease;
+    }
+
+    @keyframes shake {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(6px); }
+      60% { transform: translateX(-5px); }
+      80% { transform: translateX(5px); }
+      100% { transform: translateX(0); }
     }
 
     .phonetic {
@@ -222,7 +237,8 @@
         knownSet: new Set(),
         unknownSet: new Set(),
         current: null,
-        currentMasked: true
+        currentMasked: true,
+        processing: false
       };
 
       const el = {
@@ -268,6 +284,13 @@
         el.meaningText.classList.toggle('masked', masked);
       }
 
+      function setProcessing(processing) {
+        state.processing = processing;
+        el.knownBtn.disabled = processing;
+        el.unknownBtn.disabled = processing;
+        el.nextBtn.disabled = processing;
+      }
+
       function showWord(item) {
         state.current = item;
         el.wordText.textContent = item.word;
@@ -299,7 +322,7 @@
       }
 
       function markKnown() {
-        if (!state.current) return;
+        if (!state.current || state.processing) return;
         const currentId = state.current._id;
         state.reviewQueue.shift();
         state.knownSet.add(currentId);
@@ -307,13 +330,24 @@
         nextWord();
       }
 
-      function markUnknown() {
-        if (!state.current) return;
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function markUnknown() {
+        if (!state.current || state.processing) return;
+        setProcessing(true);
+        setMeaningMask(false);
+        el.wordText.classList.add('unknown-feedback');
         const current = state.reviewQueue.shift();
         state.reviewQueue.push(current);
         state.unknownSet.add(current._id);
         state.knownSet.delete(current._id);
+        updateStats();
+        await sleep(2000);
+        el.wordText.classList.remove('unknown-feedback');
         nextWord();
+        setProcessing(false);
       }
 
       function speakWord() {
