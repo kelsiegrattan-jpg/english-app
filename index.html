@@ -145,7 +145,7 @@
     }
 
     .actions {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     button {
@@ -216,6 +216,7 @@
       <div class="actions">
         <button id="knownBtn" class="btn-success">我认识</button>
         <button id="unknownBtn" class="btn-danger">不认识（加入循环）</button>
+        <button id="prevBtn" class="btn-warning">上一词</button>
         <button id="nextBtn" class="btn-primary">开始 / 下一词</button>
       </div>
       <p class="tip">
@@ -236,11 +237,12 @@
         reviewQueue: [],
         knownSet: new Set(),
         unknownSet: new Set(),
+        history: [],
+        historyIndex: -1,
         current: null,
         currentMasked: true,
         processing: false,
-        meaningCache: new Map(),
-        currentFetchToken: 0
+        meaningCache: new Map()
       };
 
       const el = {
@@ -256,6 +258,7 @@
         nextBtn: document.getElementById('nextBtn'),
         knownBtn: document.getElementById('knownBtn'),
         unknownBtn: document.getElementById('unknownBtn'),
+        prevBtn: document.getElementById('prevBtn'),
         toggleMeaningBtn: document.getElementById('toggleMeaningBtn'),
         speakBtn: document.getElementById('speakBtn')
       };
@@ -291,74 +294,63 @@
         el.knownBtn.disabled = processing;
         el.unknownBtn.disabled = processing;
         el.nextBtn.disabled = processing;
+        el.prevBtn.disabled = processing;
       }
 
-      function isGenericMeaning(meaning = '') {
-        return /常用词汇|常用动作|常用描述词/.test(meaning);
-      }
-
-      function formatPartOfSpeech(partOfSpeech = '') {
-        const mapping = {
-          noun: 'n.',
-          verb: 'v.',
-          adjective: 'adj.',
-          adverb: 'adv.',
-          pronoun: 'pron.',
-          preposition: 'prep.',
-          conjunction: 'conj.',
-          interjection: 'int.',
-          determiner: 'det.'
-        };
-        return mapping[partOfSpeech] || partOfSpeech;
-      }
-
-      async function fetchSpecificMeaning(word) {
-        if (state.meaningCache.has(word)) {
-          return state.meaningCache.get(word);
+      function baseMeaningText(item) {
+        const meaning = (item.meaning || '').trim();
+        if (!meaning) return '暂无释义';
+        if (/常用(词汇|动作|描述词)/.test(meaning)) {
+          return '正在加载具体释义…';
         }
+        return meaning;
+      }
 
+      function setWordMeaning(item, text) {
+        if (!state.current || state.current._id !== item._id) return;
+        el.meaningText.textContent = text;
+      }
+
+      async function enrichMeaning(item) {
+        if (!item?.word) return;
+        if (state.meaningCache.has(item.word)) {
+          setWordMeaning(item, state.meaningCache.get(item.word));
+          return;
+        }
+        if (!/常用(词汇|动作|描述词)/.test(item.meaning || '')) return;
         try {
-          const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-          if (!response.ok) throw new Error('dictionary api unavailable');
-          const data = await response.json();
-          const firstEntry = data?.[0];
-          const firstMeaning = firstEntry?.meanings?.[0];
-          const firstDef = firstMeaning?.definitions?.[0];
-          if (!firstMeaning || !firstDef?.definition) throw new Error('definition not found');
-
-          const detail = {
-            meaning: `${formatPartOfSpeech(firstMeaning.partOfSpeech)} ${firstDef.definition}`,
-            example: firstDef.example || firstEntry?.meanings?.[0]?.definitions?.[1]?.example || ''
-          };
-          state.meaningCache.set(word, detail);
-          return detail;
+          const resp = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(item.word)}`);
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const definitions = data?.[0]?.meanings
+            ?.flatMap((m) => (m.definitions || []).slice(0, 1).map((d) => `${m.partOfSpeech || ''} ${d.definition || ''}`.trim()))
+            ?.filter(Boolean)
+            ?.slice(0, 2);
+          if (!definitions || definitions.length === 0) return;
+          const concrete = definitions.join('；');
+          state.meaningCache.set(item.word, concrete);
+          setWordMeaning(item, concrete);
         } catch (error) {
-          const fallback = {
-            meaning: '未获取到在线词典释义，请稍后重试（需联网）。',
-            example: ''
-          };
-          state.meaningCache.set(word, fallback);
-          return fallback;
+          // 离线场景静默降级
         }
       }
 
-      async function showWord(item) {
+      function showWord(item, source = 'next') {
         state.current = item;
         const fetchToken = ++state.currentFetchToken;
         el.wordText.textContent = item.word;
         el.phoneticText.textContent = item.phonetic || '/暂无音标/';
-        el.meaningText.textContent = item.meaning || '暂无释义';
+        el.meaningText.textContent = baseMeaningText(item);
         el.exampleText.textContent = item.example ? `例句：${item.example}` : '';
         setMeaningMask(true);
-
-        if (isGenericMeaning(item.meaning)) {
-          const specific = await fetchSpecificMeaning(item.word);
-          if (fetchToken !== state.currentFetchToken || !state.current || state.current._id !== item._id) {
-            return;
+        if (source === 'next') {
+          if (state.historyIndex < state.history.length - 1) {
+            state.history = state.history.slice(0, state.historyIndex + 1);
           }
-          el.meaningText.textContent = specific.meaning;
-          el.exampleText.textContent = specific.example ? `例句：${specific.example}` : '';
+          state.history.push(item);
+          state.historyIndex = state.history.length - 1;
         }
+        enrichMeaning(item);
       }
 
       function showEmptyState() {
@@ -382,10 +374,24 @@
         updateStats();
       }
 
+      function previousWord() {
+        if (state.processing || state.historyIndex <= 0) return;
+        state.historyIndex -= 1;
+        showWord(state.history[state.historyIndex], 'history');
+        updateStats();
+      }
+
+      function removeFromQueue(wordId) {
+        const index = state.reviewQueue.findIndex((item) => item._id === wordId);
+        if (index === -1) return null;
+        const [item] = state.reviewQueue.splice(index, 1);
+        return item;
+      }
+
       function markKnown() {
         if (!state.current || state.processing) return;
         const currentId = state.current._id;
-        state.reviewQueue.shift();
+        removeFromQueue(currentId);
         state.knownSet.add(currentId);
         state.unknownSet.delete(currentId);
         nextWord();
@@ -400,12 +406,12 @@
         setProcessing(true);
         setMeaningMask(false);
         el.wordText.classList.add('unknown-feedback');
-        const current = state.reviewQueue.shift();
+        const current = removeFromQueue(state.current._id) || state.current;
         state.reviewQueue.push(current);
-        state.unknownSet.add(current._id);
-        state.knownSet.delete(current._id);
+        state.unknownSet.add(state.current._id);
+        state.knownSet.delete(state.current._id);
         updateStats();
-        await sleep(2000);
+        await sleep(2500);
         el.wordText.classList.remove('unknown-feedback');
         nextWord();
         setProcessing(false);
@@ -423,6 +429,7 @@
 
       function bindEvents() {
         el.nextBtn.addEventListener('click', nextWord);
+        el.prevBtn.addEventListener('click', previousWord);
         el.knownBtn.addEventListener('click', markKnown);
         el.unknownBtn.addEventListener('click', markUnknown);
         el.toggleMeaningBtn.addEventListener('click', () => setMeaningMask(!state.currentMasked));
