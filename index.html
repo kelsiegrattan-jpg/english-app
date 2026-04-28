@@ -243,7 +243,7 @@
       };
 
       function validateWordList() {
-        if (!Array.isArray(window.wordList) || window.wordList.length === 0) {
+        if (!Array.isArray(wordList) || wordList.length === 0) {
           el.wordText.textContent = 'wordList 为空';
           el.phoneticText.textContent = '/ 请检查 words.js /';
           el.meaningText.textContent = '没有读取到词库，请确认 index.html 与 words.js 在同一文件夹。';
@@ -253,11 +253,11 @@
       }
 
       function resetQueue() {
-        state.reviewQueue = window.wordList.map((item, index) => ({ ...item, _id: index }));
+        state.reviewQueue = wordList.map((item, index) => ({ ...item, _id: index }));
       }
 
       function updateStats() {
-        el.totalCount.textContent = String(window.wordList.length);
+        el.totalCount.textContent = String(wordList.length);
         el.reviewCount.textContent = String(state.reviewQueue.length);
         el.knownCount.textContent = String(state.knownSet.size);
         el.unknownCount.textContent = String(state.unknownSet.size);
