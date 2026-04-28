@@ -311,6 +311,24 @@
         el.meaningText.textContent = text;
       }
 
+      async function translateToChinese(text) {
+        if (!text) return '';
+        try {
+          const resp = await fetch(
+            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`
+          );
+          if (!resp.ok) return '';
+          const data = await resp.json();
+          const translated = (data?.[0] || [])
+            .map((part) => part?.[0] || '')
+            .join('')
+            .trim();
+          return translated;
+        } catch (error) {
+          return '';
+        }
+      }
+
       async function enrichMeaning(item) {
         if (!item?.word) return;
         if (state.meaningCache.has(item.word)) {
@@ -323,11 +341,24 @@
           if (!resp.ok) return;
           const data = await resp.json();
           const definitions = data?.[0]?.meanings
-            ?.flatMap((m) => (m.definitions || []).slice(0, 1).map((d) => `${m.partOfSpeech || ''} ${d.definition || ''}`.trim()))
+            ?.flatMap((m) =>
+              (m.definitions || [])
+                .slice(0, 1)
+                .map((d) => ({ pos: m.partOfSpeech || '', definition: (d.definition || '').trim() }))
+            )
             ?.filter(Boolean)
             ?.slice(0, 2);
           if (!definitions || definitions.length === 0) return;
-          const concrete = definitions.join('；');
+
+          const translatedDefinitions = [];
+          for (const itemDef of definitions) {
+            const translated = await translateToChinese(itemDef.definition);
+            if (!translated) continue;
+            translatedDefinitions.push(`${itemDef.pos ? `${itemDef.pos}. ` : ''}${translated}`);
+          }
+          if (translatedDefinitions.length === 0) return;
+
+          const concrete = translatedDefinitions.join('；');
           state.meaningCache.set(item.word, concrete);
           setWordMeaning(item, concrete);
         } catch (error) {
