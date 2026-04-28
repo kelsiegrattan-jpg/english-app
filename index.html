@@ -238,7 +238,9 @@
         unknownSet: new Set(),
         current: null,
         currentMasked: true,
-        processing: false
+        processing: false,
+        meaningCache: new Map(),
+        currentFetchToken: 0
       };
 
       const el = {
@@ -291,13 +293,72 @@
         el.nextBtn.disabled = processing;
       }
 
-      function showWord(item) {
+      function isGenericMeaning(meaning = '') {
+        return /常用词汇|常用动作|常用描述词/.test(meaning);
+      }
+
+      function formatPartOfSpeech(partOfSpeech = '') {
+        const mapping = {
+          noun: 'n.',
+          verb: 'v.',
+          adjective: 'adj.',
+          adverb: 'adv.',
+          pronoun: 'pron.',
+          preposition: 'prep.',
+          conjunction: 'conj.',
+          interjection: 'int.',
+          determiner: 'det.'
+        };
+        return mapping[partOfSpeech] || partOfSpeech;
+      }
+
+      async function fetchSpecificMeaning(word) {
+        if (state.meaningCache.has(word)) {
+          return state.meaningCache.get(word);
+        }
+
+        try {
+          const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+          if (!response.ok) throw new Error('dictionary api unavailable');
+          const data = await response.json();
+          const firstEntry = data?.[0];
+          const firstMeaning = firstEntry?.meanings?.[0];
+          const firstDef = firstMeaning?.definitions?.[0];
+          if (!firstMeaning || !firstDef?.definition) throw new Error('definition not found');
+
+          const detail = {
+            meaning: `${formatPartOfSpeech(firstMeaning.partOfSpeech)} ${firstDef.definition}`,
+            example: firstDef.example || firstEntry?.meanings?.[0]?.definitions?.[1]?.example || ''
+          };
+          state.meaningCache.set(word, detail);
+          return detail;
+        } catch (error) {
+          const fallback = {
+            meaning: '未获取到在线词典释义，请稍后重试（需联网）。',
+            example: ''
+          };
+          state.meaningCache.set(word, fallback);
+          return fallback;
+        }
+      }
+
+      async function showWord(item) {
         state.current = item;
+        const fetchToken = ++state.currentFetchToken;
         el.wordText.textContent = item.word;
         el.phoneticText.textContent = item.phonetic || '/暂无音标/';
         el.meaningText.textContent = item.meaning || '暂无释义';
         el.exampleText.textContent = item.example ? `例句：${item.example}` : '';
         setMeaningMask(true);
+
+        if (isGenericMeaning(item.meaning)) {
+          const specific = await fetchSpecificMeaning(item.word);
+          if (fetchToken !== state.currentFetchToken || !state.current || state.current._id !== item._id) {
+            return;
+          }
+          el.meaningText.textContent = specific.meaning;
+          el.exampleText.textContent = specific.example ? `例句：${specific.example}` : '';
+        }
       }
 
       function showEmptyState() {
@@ -310,14 +371,14 @@
         el.emptyNotice.hidden = false;
       }
 
-      function nextWord() {
+      async function nextWord() {
         el.emptyNotice.hidden = true;
         if (state.reviewQueue.length === 0) {
           showEmptyState();
           updateStats();
           return;
         }
-        showWord(state.reviewQueue[0]);
+        await showWord(state.reviewQueue[0]);
         updateStats();
       }
 
